@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP8266 远程控制面板</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.js" type="text/javascript"></script>
+    
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #222;
+            font-family: Arial, sans-serif;
+            color: white;
+            flex-direction: column;
+        }
+
+        /* 开关灯按钮样式 */
+        #controlBtn {
+            width: 180px;
+            height: 180px;
+            border-radius: 50%;
+            font-size: 24px;
+            font-weight: bold;
+            color: white;
+            background-color: #e74c3c; /* 关灯时为红色 */
+            border: none;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.5);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* 按钮按下时的样式 */
+        #controlBtn:active, .btn-active {
+            background-color: #2ecc71 !important; /* 开灯时为绿色 */
+            box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+            transform: translateY(8px);
+        }
+
+        /* 舵机滑台容器样式 */
+        .slider-container {
+            margin-top: 50px;
+            text-align: center;
+            width: 80%;
+            max-width: 300px;
+            background: #333;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+
+        .slider-container label {
+            font-size: 18px;
+            font-weight: bold;
+            display: block;
+            margin-bottom: 15px;
+            color: #3498db;
+        }
+
+        /* 滑动条样式 */
+        input[type="range"] {
+            width: 100%;
+            cursor: pointer;
+        }
+
+        #status {
+            margin-top: 30px;
+            font-size: 14px;
+            color: #aaa;
+        }
+    </style>
+</head>
+<body>
+
+    <button id="controlBtn">点按开灯</button>
+    
+    <div class="slider-container">
+        <label for="servoSlider">舵机角度: <span id="servoVal">90</span>°</label>
+        <input type="range" id="servoSlider" min="0" max="180" value="90">
+    </div>
+
+    <div id="status">正在连接到 MQTT 服务器...</div>
+
+    <script>
+        // --- MQTT 服务器配置 ---
+        const host = "08e06f289404444fab8874648aed4d71.s1.eu.hivemq.cloud";
+        const port = 8884; // HiveMQ WebSockets 端口
+        const clientId = "WebClient-" + Math.random().toString(16).substr(2, 8);
+        const username = "michael";
+        const password = "12345678Aa";
+        
+        // --- 两个不同的 MQTT 主题 (Topic) ---
+        const lightTopic = "michael/esp8266/light"; // 控制灯
+        const servoTopic = "michael/esp8266/servo"; // 控制舵机
+
+        const client = new Paho.MQTT.Client(host, port, clientId);
+
+        client.onConnectionLost = onConnectionLost;
+
+        const options = {
+            useSSL: true,
+            userName: username,
+            password: password,
+            onSuccess: onConnect,
+            onFailure: onFail
+        };
+
+        // 开始连接
+        client.connect(options);
+
+        const statusDiv = document.getElementById("status");
+        const btn = document.getElementById("controlBtn");
+        const servoSlider = document.getElementById("servoSlider");
+        const servoVal = document.getElementById("servoVal");
+
+        function onConnect() {
+            statusDiv.innerText = "已成功连接到服务器 (Ready)";
+            statusDiv.style.color = "#2ecc71";
+        }
+
+        function onFail(message) {
+            statusDiv.innerText = "连接失败: " + message.errorMessage;
+            statusDiv.style.color = "#e74c3c";
+        }
+
+        function onConnectionLost(responseObject) {
+            if (responseObject.errorCode !== 0) {
+                statusDiv.innerText = "连接断开: " + responseObject.errorMessage;
+                statusDiv.style.color = "#e74c3c";
+            }
+        }
+
+        // 发送 MQTT 消息的函数，现在需要传入目标 Topic
+        function sendMessage(targetTopic, payload) {
+            if (client.isConnected()) {
+                const message = new Paho.MQTT.Message(payload);
+                message.destinationName = targetTopic;
+                client.send(message);
+            }
+        }
+
+        // ==========================================
+        // 1. 灯光按钮逻辑 (按下开，松开关)
+        // ==========================================
+        btn.addEventListener("mousedown", () => {
+            btn.classList.add("btn-active");
+            sendMessage(lightTopic, "1");
+        });
+        btn.addEventListener("mouseup", () => {
+            btn.classList.remove("btn-active");
+            sendMessage(lightTopic, "0");
+        });
+        btn.addEventListener("mouseleave", () => {
+            if (btn.classList.contains("btn-active")) {
+                btn.classList.remove("btn-active");
+                sendMessage(lightTopic, "0");
+            }
+        });
+        // 触屏手机支持
+        btn.addEventListener("touchstart", (e) => {
+            e.preventDefault();
+            btn.classList.add("btn-active");
+            sendMessage(lightTopic, "1");
+        });
+        btn.addEventListener("touchend", (e) => {
+            e.preventDefault();
+            btn.classList.remove("btn-active");
+            sendMessage(lightTopic, "0");
+        });
+
+        // ==========================================
+        // 2. 舵机 (Servo) 滑台逻辑
+        // ==========================================
+        // 当你在拖动滑块时，实时更新网页上的数字显示
+        servoSlider.addEventListener("input", (e) => {
+            servoVal.innerText = e.target.value;
+        });
+
+        // 重要：只有当你【松开】滑块时，才向服务器发送 MQTT 消息
+        // 如果使用 input 事件发送，拖动时会产生巨大的数据洪流，导致 ESP8266 崩溃或 HiveMQ 断开连接
+        servoSlider.addEventListener("change", (e) => {
+            sendMessage(servoTopic, e.target.value.toString());
+        });
+    </script>
+</body>
+</html>
