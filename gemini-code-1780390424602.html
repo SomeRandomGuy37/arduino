@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP8266 Remote Control</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.js" type="text/javascript"></script>
+    
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #222;
+            font-family: Arial, sans-serif;
+            color: white;
+            flex-direction: column;
+        }
+
+        /* Button Visuals */
+        #controlBtn {
+            width: 200px;
+            height: 200px;
+            border-radius: 50%;
+            font-size: 24px;
+            font-weight: bold;
+            color: white;
+            background-color: #e74c3c; /* Red when OFF */
+            border: none;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.5);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* Button Visuals when pressed (active) */
+        #controlBtn:active, .btn-active {
+            background-color: #2ecc71 !important; /* Green when ON */
+            box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+            transform: translateY(8px);
+        }
+
+        #status {
+            margin-top: 20px;
+            font-size: 14px;
+            color: #aaa;
+        }
+    </style>
+</head>
+<body>
+
+    <button id="controlBtn">PRESS ME</button>
+    <div id="status">Connecting to MQTT broker...</div>
+
+    <script>
+        // --- MQTT Configuration ---
+        const host = "08e06f289404444fab8874648aed4d71.s1.eu.hivemq.cloud";
+        const port = 8884; // WebSocket port for HiveMQ Cloud
+        const clientId = "WebClient-" + Math.random().toString(16).substr(2, 8);
+        const username = "michael";
+        const password = "12345678Aa";
+        const topic = "michael/esp8266/light";
+
+        // Create MQTT Client instance
+        const client = new Paho.MQTT.Client(host, port, clientId);
+
+        // Set callback handlers
+        client.onConnectionLost = onConnectionLost;
+
+        // Connect options (TLS/SSL is required)
+        const options = {
+            useSSL: true,
+            userName: username,
+            password: password,
+            onSuccess: onConnect,
+            onFailure: onFail
+        };
+
+        // Attempt connection
+        client.connect(options);
+
+        const statusDiv = document.getElementById("status");
+        const btn = document.getElementById("controlBtn");
+
+        function onConnect() {
+            statusDiv.innerText = "Connected to Server. Ready.";
+            statusDiv.style.color = "#2ecc71";
+        }
+
+        function onFail(message) {
+            statusDiv.innerText = "Connection failed: " + message.errorMessage;
+            statusDiv.style.color = "#e74c3c";
+        }
+
+        function onConnectionLost(responseObject) {
+            if (responseObject.errorCode !== 0) {
+                statusDiv.innerText = "Connection Lost: " + responseObject.errorMessage;
+                statusDiv.style.color = "#e74c3c";
+            }
+        }
+
+        function sendMessage(payload) {
+            if (client.isConnected()) {
+                const message = new Paho.MQTT.Message(payload);
+                message.destinationName = topic;
+                client.send(message);
+            }
+        }
+
+        // --- Button Interaction Logic ---
+        // Mouse Events (Desktop)
+        btn.addEventListener("mousedown", () => {
+            btn.classList.add("btn-active");
+            sendMessage("1");
+        });
+        btn.addEventListener("mouseup", () => {
+            btn.classList.remove("btn-active");
+            sendMessage("0");
+        });
+        btn.addEventListener("mouseleave", () => {
+            // Prevent getting stuck on if cursor leaves button while pressing
+            if (btn.classList.contains("btn-active")) {
+                btn.classList.remove("btn-active");
+                sendMessage("0");
+            }
+        });
+
+        // Touch Events (Mobile)
+        btn.addEventListener("touchstart", (e) => {
+            e.preventDefault(); // Prevent default mobile behaviors like zooming
+            btn.classList.add("btn-active");
+            sendMessage("1");
+        });
+        btn.addEventListener("touchend", (e) => {
+            e.preventDefault();
+            btn.classList.remove("btn-active");
+            sendMessage("0");
+        });
+    </script>
+</body>
+</html>
